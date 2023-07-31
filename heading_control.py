@@ -3,6 +3,7 @@ import sys
 import signal
 from pid import PID
 import numpy as np
+import math
 
 
 def set_rc_channel_pwm(mav, channel_id, pwm=1500):
@@ -76,27 +77,78 @@ def main():
     desired_heading_deg = float(input("Enter target heading: "))
 
     # TODO: convert heading to radians
-    desired_heading = None
+    # if desired_heading_deg > 0 and desired_heading_deg < 180:
+    #     desired_heading = np.deg2rad(desired_heading_deg)
+    # else:
+    #     desired_heading = np.deg2rad(desired_heading_deg-360)
 
-    pid = PID(0.5, 0.0, 10.0, 100)
+    desired_heading = np.deg2rad(desired_heading_deg)
+    pid = PID(30, 0, -10, 100)
+
+   
 
     while True:
         # get yaw from the vehicle
         msg = mav.recv_match(type="ATTITUDE", blocking=True)
         yaw = msg.yaw
+
         yaw_rate = msg.yawspeed
 
         print("Heading: ", np.rad2deg(yaw))
 
+        '''
+
         # calculate error
+
+        # because yaw is goes to -180 on the left ...
+        # there are four cases for desired heading and actual yaw
+
+        #1 both are on the right and posititve, we take the normal error
+        if np.rad2deg(desired_heading) > 0 and np.rad2deg(desired_heading) < 180 and np.rad2deg(yaw) > 0 and np.rad2deg(yaw) < 180:
+            error = np.deg2rad((np.rad2deg(desired_heading)-np.rad2deg(yaw))%360)
+        #2 only yaw is negative, we need to add 360
+        elif np.rad2deg(desired_heading) > 0 and np.rad2deg(desired_heading) < 180 and np.rad2deg(yaw) > -180 and np.rad2deg(yaw) < 0:
+            error = np.deg2rad((np.rad2deg(desired_heading)-(np.rad2deg(yaw)+360))%360)
+        #3 same as #2 but the opposite, we do the same thing but in opposite order
+        elif np.rad2deg(desired_heading) > -180 and np.rad2deg(desired_heading) < 0 and np.rad2deg(yaw) > 0 and np.rad2deg(yaw) < 180:
+            error = np.deg2rad((np.rad2deg(desired_heading)+360-np.rad2deg(yaw))%360)
+        else:
+        # same as #1, but the opposite, we do the same thing
+            error = np.deg2rad((np.rad2deg(desired_heading)-np.rad2deg(yaw))%360)
+
+        # to get it to recorrect for overpositioning, we must take negative error if it is past the desired heading
+        if 360 - np.rad2deg(error) < 180:
+            error = (360 - np.rad2deg(error))*(-1)
+
+        '''
+        
+
+
+        
         error = desired_heading - yaw
+
+        if error > np.pi /2 and error < np.pi:
+            error = 1
+        elif error < 3* np.pi /2 and error > np.pi:
+            error = -1
+        else:
+            error = np.sin(error)
+
+
+        
+
+
         print("Error: ", np.rad2deg(error))
+
 
         output = pid.update(error, error_derivative=yaw_rate)
         print("Output: ", output)
 
         # set vertical power
-        set_rotation_power(mav, -output)
+        
+        set_rotation_power(mav, output)
+
+
 
 
 if __name__ == "__main__":
